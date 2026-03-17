@@ -126,7 +126,7 @@ async function main() {
 
     const reply = await askAI(userInput);
 
-    console.log("\x1b[32mAI:\x1b[0m", reply, "\n");
+    console.log("\x1b[32mAI:", reply, "\x1b[0m\n");
 
     const cleanReply = reply.replace(/\*/g, "");
     

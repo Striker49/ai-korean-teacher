@@ -60,12 +60,10 @@ function cleanReplyForSpeech(reply) {
   return reply.replace(/\*/g, "").trim();
 }
 
-async function handleUserInput(userInput) {
-  const trimmed = userInput.trim().toLowerCase();
-  console.log("trimmed:", trimmed);
 
-  if (!trimmed) return;
-  if (trimmed.toLowerCase() === "exit") {
+function tryHandlingCOmmand(userInput) {
+  const trimmed = userInput.replace(/\.+$/g, "");
+  if (trimmed === "exit") {
     process.exit(0);
   }
 
@@ -75,10 +73,21 @@ async function handleUserInput(userInput) {
     console.log("🧠 Memory saved.");
   }
 
-  if (trimmed.toLowerCase() === "open vscode") {
+  if (trimmed === "open vs code" || trimmed === "open vscode") {
     exec("code");
     console.log("Opening VSCode...");
+    return true;
   }
+
+}
+
+async function handleUserInput(userInput) {
+  const trimmed = userInput.trim().toLowerCase();
+  //console.log("trimmed:", trimmed);
+
+  if (!trimmed) return;
+
+  if (tryHandlingCOmmand(trimmed)) return;
 
   const reply = await askAI(trimmed);
   console.log("\x1b[32mAI:", reply, "\x1b[0m\n");

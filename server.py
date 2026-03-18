@@ -16,8 +16,8 @@ def synthesize():
         speaker="p270",
         #speaker="Ana Florence",  # XTTS
         #language="en",
-        file_path="output.wav"
+        file_path="audio/output.wav"
     )
-    return send_file("output.wav", mimetype="audio/wav")
+    return send_file("audio/output.wav", mimetype="audio/wav")
 
 app.run(port=5002)

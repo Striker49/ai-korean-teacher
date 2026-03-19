@@ -1,5 +1,6 @@
 .env
 memory.json
 output.wav
+output.mp3
 input.wav
 node_modules/

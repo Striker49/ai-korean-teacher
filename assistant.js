@@ -5,7 +5,6 @@ import dotenv from "dotenv";
 import { MEMORY_FILE, MAX_TURNS } from "./config.js";
 import { loadJsonArray, addMemory, getRelevantMemories } from "./memory.js";
 import { recordAudio, transcribeAudio, textToAudio, stopAudio } from "./voice.js";
-import { tools, toolPermissions } from "./tools.js";
 
 dotenv.config();
 
@@ -21,49 +20,47 @@ const openai = new OpenAI({
   },
 });
 
-function buildSystemPrompt(latestUserMessage = "") {
+function buildSystemPrompt(latestUserMessage = "", isFirstMessage = false) {
   const relevantMemories = getRelevantMemories(memory, latestUserMessage);
 
-  return `You are Catherine, Sebastien's personal AI assistant.
+  return `You are a patient Korean teacher for an English-speaking learner.
+
 Be helpful, natural, and concise.
-Keep responses suitable for speaking out loud.
 Maintain context across the conversation.
 
-You can either:
-- answer normally
-- or request a tool call when an action is needed
+${isFirstMessage 
+  ? "You may briefly introduce yourself." 
+  : "Do NOT introduce yourself or repeat greetings."}
 
-IMPORTANT RULES:
-- If a tool is needed, output ONLY a single raw JSON object.
-- Do not use XML, tags, markdown, code fences, or explanations.
-- Do not say <tool_call>, <function>, or <parameter>.
-- The ONLY valid tool format is:
-{"tool":"tool_name","args":{}}
-- Example:
-{"tool":"read_file","args":{"path":"AI/readme.md"}}
-- If no tool is needed, answer normally in plain text.
-- Never claim you opened, read, or wrote a file unless a tool was actually used.
-- After a tool result is provided, either request another tool with JSON or answer normally.
+Your goals:
+- help the user practice Korean naturally
+- correct mistakes clearly and kindly
+- explain grammar in simple English
+- encourage active practice
+- adapt to the user's level
 
-Available tools:
-- open_vscode: Open Visual Studio Code. Args: {}
-- open_browser: Open a website in the browser. Args: { "url": "string" }
-- open_folder: Open a folder in the file explorer. Args: { "path": "string" }
-- read_file: Read a text file from disk. Args: { "path": "string" }
-- write_file: Write a text file. Args: { "path": "string", "content": "string" }
-- append_file: Append text to a file. Args: { "path": "string", "content": "string" }
-- list_files: List files in a directory. Args: { "path": "string" }
-- search_files: Search for text inside files in a directory. Args: { "path": "string", "query": "string" }
+Rules:
+- Keep responses short (2–4 sentences unless asked for more).
+- Do NOT over-explain.
+- When the user writes in Korean:
+  1. Show corrected version (if needed)
+  2. Give a short explanation
+- Prefer simple Korean examples with English translation.
+- Ask follow-up questions to keep the conversation going.
+- During quizzes: ask one question only.
+- Be supportive, never harsh.
 
 ${
   relevantMemories.length > 0
-    ? `Relevant memory: ${JSON.stringify(relevantMemories)}`
+    ? `Relevant context:\n- ${relevantMemories.join("\n- ")}`
     : ""
 }`;
 }
 
-async function askAIFromHistory(latestUserMessage = "") {
+async function askAI(latestUserMessage) {
   const systemPrompt = buildSystemPrompt(latestUserMessage);
+  //console.log("conversatio history: ", conversationHistory);
+  conversationHistory.push({role: "user", content: latestUserMessage})
 
   const trimmedHistory = conversationHistory.slice(-MAX_TURNS * 2);
 
@@ -78,139 +75,35 @@ async function askAIFromHistory(latestUserMessage = "") {
   return completion.choices?.[0]?.message?.content ?? "I couldn't generate a reply.";
 }
 
-function tryParseToolCall(reply) {
-  const cleaned = reply.trim().replace(/^```json\s*|```$/g, "");
-
-  try {
-    const parsed = JSON.parse(cleaned);
-
-    if (
-      parsed &&
-      typeof parsed === "object" &&
-      typeof parsed.tool === "string" &&
-      parsed.args !== undefined
-    ) {
-      return parsed;
-    }
-  } catch (e) {}
-
-  const toolMatch = cleaned.match(/<function=([\w-]+)>/i);
-  if (!toolMatch) return null;
-
-  const tool = toolMatch[1];
-  const args = {};
-
-  const paramRegex = /<parameter=([\w-]+)>\s*([\s\S]*?)\s*<\/parameter>/gi;
-  let match;
-
-  while ((match = paramRegex.exec(cleaned)) !== null) {
-    const key = match[1];
-    const value = match[2].trim();
-    args[key] = value;
-  }
-
-  return { tool, args };
-}
-
-function askToolConfirmation(toolName, args) {
-  console.log(`⚠️  Tool "${toolName}" wants to run with:`);
-  console.log(JSON.stringify(args, null, 2));
-  const answer = readlineSync.question("Allow? (y/n): ").trim().toLowerCase();
-  return answer === "y" || answer === "yes";
-}
-
-async function executeTool(toolName, args) {
-  const tool = tools[toolName];
-  if (!tool) {
-    throw new Error(`Unknown tool: ${toolName}`);
-  }
-
-  const permission = toolPermissions[toolName] || "confirm";
-
-  if (permission === "confirm") {
-    const allowed = askToolConfirmation(toolName, args);
-    if (!allowed) {
-      return `User denied permission for tool: ${toolName}`;
-    }
-  }
-
-  return await tool.execute(args || {});
-}
-
-async function handleAgenticTurn(userInput) {
-  conversationHistory.push({ role: "user", content: userInput });
-  conversationHistory = conversationHistory.slice(-MAX_TURNS * 2);
-
-  for (let i = 0; i < 5; i++) {
-    const reply = await askAIFromHistory(userInput);
-    const toolCall = tryParseToolCall(reply);
-
-    if (!toolCall) {
-      conversationHistory.push({ role: "assistant", content: reply });
-      conversationHistory = conversationHistory.slice(-MAX_TURNS * 2);
-      return reply;
-    }
-
-    try {
-      const result = await executeTool(toolCall.tool, toolCall.args);
-
-      conversationHistory.push({
-        role: "assistant",
-        content: JSON.stringify(toolCall),
-      });
-
-      conversationHistory.push({
-        role: "system",
-        content: `Tool result for ${toolCall.tool}: ${
-          typeof result === "string" ? result : JSON.stringify(result)
-        }`,
-      });
-
-      conversationHistory = conversationHistory.slice(-MAX_TURNS * 2);
-    } catch (err) {
-      conversationHistory.push({
-        role: "system",
-        content: `Tool ${toolCall.tool} failed: ${err.message}`,
-      });
-    }
-  }
-
-  const fallback = "I couldn't finish the task.";
-  conversationHistory.push({ role: "assistant", content: fallback });
-  return fallback;
-}
-
 function cleanReplyForSpeech(reply) {
   return reply.replace(/\*/g, "").trim();
 }
 
-function tryHandlingCommand(userInput) {
-  const trimmed = userInput.replace(/\.+$/g, "").trim();
-
-  if (trimmed.toLowerCase() === "exit") {
+function userCommand(trimmed) {
+  if (trimmed.toLowerCase() == 'exit')
     process.exit(0);
-  }
 
-  if (/^remember\s+/i.test(trimmed)) {
-    const data = trimmed.replace(/^remember\s+/i, "").trim();
+  if (/^remember /i.test(trimmed)) {
+    const data = trimmed.replace(/^remember /i, "").trim();
     addMemory(data);
-    memory = loadJsonArray(MEMORY_FILE);
     console.log("🧠 Memory saved.");
-    return true;
+    //return;
   }
-
-  return false;
 }
 
 async function handleUserInput(userInput) {
   const trimmed = userInput.trim();
   if (!trimmed) return;
 
+  userCommand(trimmed);
+
   stopAudio();
 
-  if (tryHandlingCommand(trimmed)) return;
+  const finalReply = await askAI(trimmed);
 
-  const finalReply = await handleAgenticTurn(trimmed);
+  conversationHistory.push({role: "assistant", content: finalReply})
+
+
   console.log("\x1b[32mAI:", finalReply, "\x1b[0m\n");
   await textToAudio(cleanReplyForSpeech(finalReply));
 }
@@ -220,13 +113,15 @@ async function listenOnce() {
   const filePath = await recordAudio(5000);
   console.log("🧠 Transcribing...");
 
-  const transcript = await transcribeAudio(filePath);
+  let transcript = await transcribeAudio(filePath);
 
   if (!transcript) {
     console.log("No speech detected.");
     return;
   }
 
+  if (transcript.trim() == ("(speaking in foreign language)"))
+    transcript = await transcribeAudio(filePath, "ko");
   console.log("You said:", transcript);
   await handleUserInput(transcript);
 }

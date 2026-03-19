@@ -4,8 +4,8 @@ from flask import Flask, request, send_file
 import io
 
 app = Flask(__name__)
-tts = TTS("tts_models/en/vctk/vits").to("cuda")
-#tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda") #XTTS
+#tts = TTS("tts_models/en/vctk/vits").to("cuda")
+tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to("cuda") #XTTS
 
 @app.route("/api/tts")
 def synthesize():
@@ -13,9 +13,9 @@ def synthesize():
     buf = io.BytesIO()
     tts.tts_to_file(
         text=text,
-        speaker="p270",
-        #speaker="Ana Florence",  # XTTS
-        #language="en",
+        #speaker="p270", #VITS
+        speaker="Ana Florence",  # XTTS
+        language="ko",
         file_path="audio/output.wav"
     )
     return send_file("audio/output.wav", mimetype="audio/wav")

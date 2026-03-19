@@ -1,131 +1,129 @@
-# 🤖 AI Voice Assistant
+# 🇰🇷 AI Korean Teacher Assistant
 
-**A local AI assistant with:**
+A voice-enabled AI assistant that helps you practice Korean through conversation, corrections, and explanations.
 
-🎤 Speech-to-text (Whisper)
+---
 
-🧠 Memory system
+## ✨ Features
 
-🔊 Text-to-speech (TTS)
+* 🎤 Speech-to-text with **Whisper.cpp**
+* 🔊 Text-to-speech with **Edge TTS**
+* 🧠 AI Korean tutor:
 
-💬 Conversational AI (OpenRouter)
+  * Corrects mistakes
+  * Explains grammar simply
+  * Adapts to your level
+  * Roleplays real-life situations
+* 🔁 Smart transcription fallback (auto → Korean retry)
 
-# 🚀 Setup Instructions
+---
 
-**1. Install Node.js**
+## 🧰 Requirements
 
-Download and install:
-👉 https://nodejs.org
+* Node.js (v18+)
+* ffmpeg
+* whisper.cpp
+* A multilingual Whisper model (**NOT `.en`**)
 
-(Recommended: Node 18+)
+---
 
-**2. Install dependencies**
+## 📦 Installation
 
-In the project folder:
-
+```bash
+git clone <your-repo-url>
+cd ai_korean_teacher
 npm install
+```
 
-**3. Setup environment variables**
+Install TTS:
 
-Create a .env file:
+```bash
+npm install node-edge-tts
+```
 
-OPENROUTER_API_KEY=your_api_key_here
+---
 
-Get your key from:
-👉 https://openrouter.ai
+## 🧠 Whisper Setup
 
-**🎤 Voice Setup**
+Go to your whisper.cpp folder:
 
-**4. Install FFmpeg**
+```bash
+cd C:\whisper.cpp
+.\models\download-ggml-model.cmd small
+```
 
-Download:
-👉 https://ffmpeg.org/download.html
+This creates:
 
-Verify installation:
+```
+C:\whisper.cpp\ggml-small.bin
+```
 
-ffmpeg -version
-ffplay -version
+---
 
-**5. Setup Whisper (speech-to-text)**
+## ⚙️ Configuration
 
-Clone and build:
+Edit `config.js`:
 
-git clone https://github.com/ggerganov/whisper.cpp
-cd whisper.cpp
-make
+```js
+export const WHISPER_EXE = "C:\\whisper.cpp\\build\\bin\\Release\\whisper-cli.exe";
+export const WHISPER_MODEL = "C:\\whisper.cpp\\ggml-small.bin";
+export const MIC_NAME = "audio=Your Microphone Name";
+```
 
-Download a model:
+⚠️ Do not use `.en` models (English-only)
 
-./models/download-ggml-model.sh base.en
+---
 
-Update your config file with:
+## ▶️ Run
 
-WHISPER_EXE
-
-WHISPER_MODEL
-
-**6. Configure your microphone (Windows)**
-
-List available devices:
-
-ffmpeg -list_devices true -f dshow -i dummy
-
-Update your config with your microphone name:
-
-MIC_NAME = "audio=Your Microphone Name"
-
-**🔊 Text-to-Speech (TTS)**
-
-You must run a local TTS server before starting the assistant.
-
-Option 1:
-tts-server --model_name tts_models/en/ljspeech/tacotron2-DDC
-
-Option 2:
-py -3 .\XTTS_server.py
-
-The server should run on:
-
-http://localhost:5002/api/tts
-
-**▶️ Run the Assistant**
-
-Start the assistant:
-
+```bash
 node assistant.js
+```
 
-**💡 Usage**
+---
 
-Type normally to chat
+## 🎤 Usage
 
-Use /voice to speak
+1. Trigger voice mode (`/voice`)
+2. Speak
+3. AI transcribes and responds
+4. Korean is spoken back using TTS
 
-Type exit to quit
+---
 
-Use remember ... to store memory
+## 🧪 Example
 
-**⚠️ Notes**
+**Input:**
 
-Make sure the TTS server is running before starting the assistant
+```
+안녕 나는 학교 갔다
+```
 
-Ensure ffmpeg and ffplay are available in your system PATH
+**Output:**
 
-The assistant will create /audio and /memory folders automatically
+```
+👉 Corrected: 안녕, 나는 학교에 갔어.
+You missed the particle "에" and used incorrect tense.
+What did you do at school?
+```
 
-**🛠️ Troubleshooting**
+---
 
-**❌ “ffmpeg not found”**
+## 💡 Notes
 
-→ Add FFmpeg to your system PATH
+* Korean transcription works best with full sentences
+* Edge TTS requires internet connection
+* Auto-detect may retry in Korean if needed
 
-**❌ No audio playback**
+---
 
-→ Check ffplay is installed
+## 🚀 Future Ideas
 
-**❌ TTS not working**
+* Real-time conversation mode
+* Pronunciation feedback
+* Difficulty levels
+* Memory-based learning
 
-→ Make sure the server is running on port 5002
+---
 
-**❌ No speech detected**
-
-→ Verify your microphone name in config
+Enjoy learning Korean! 🇰🇷

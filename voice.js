@@ -1,15 +1,34 @@
 import fs from "fs";
 import { AUDIO_FILE, MIC_NAME, WHISPER_EXE, WHISPER_MODEL } from "./config.js";
 import { spawn, execSync } from "child_process";
+import edgeTTS from "node-edge-tts";
+
+const { EdgeTTS } = edgeTTS;
 
 let currentAudioPlayer = null;
-const OUTPUT_FILE = "audio/output.wav";
+let teacherMode = "general";
+const OUTPUT_FILE = "audio/output.mp3";
+
+function containsKorean(text) {
+  return /[가-힣]/.test(text);
+}
+
+function createTTS(text) {
+  const isKorean = containsKorean(text);
+
+  return new EdgeTTS({
+    voice: isKorean ? "ko-KR-SunHiNeural" : "en-US-AriaNeural",
+    lang: isKorean ? "ko-KR" : "en-US",
+    outputFormat: "audio-24khz-48kbitrate-mono-mp3",
+    timeout: 10000,
+  });
+}
 
 export function stopAudio() {
   if (currentAudioPlayer) {
     try {
       execSync(`taskkill /pid ${currentAudioPlayer.pid} /f /t`, { stdio: "ignore" });
-    } catch (err) {
+    } catch {
       // process may already be gone
     }
     currentAudioPlayer = null;
@@ -17,17 +36,19 @@ export function stopAudio() {
 }
 
 export async function textToAudio(message) {
-  const safeMessage = encodeURIComponent(message);
-  const response = await fetch(`http://localhost:5002/api/tts?text=${safeMessage}`);
+  if (!message || !message.trim()) return;
 
-  if (!response.ok) {
-    throw new Error(`TTS request failed: ${response.status} ${response.statusText}`);
+  if (!fs.existsSync("audio")) {
+    fs.mkdirSync("audio", { recursive: true });
   }
 
-  const audioBuffer = await response.arrayBuffer();
-  fs.writeFileSync(OUTPUT_FILE, Buffer.from(audioBuffer));
-
   stopAudio();
+
+  // Remove emojis / unsupported symbols
+  message = message.replace(/[^\p{L}\p{N}\p{P}\p{Z}]/gu, "");
+
+  const tts = createTTS(message);
+  await tts.ttsPromise(message, OUTPUT_FILE);
 
   currentAudioPlayer = spawn(
     "ffplay",
@@ -77,15 +98,26 @@ export function recordAudio(durationMs = 5000) {
   });
 }
 
-export function transcribeAudio(filePath) {
+
+export function transcribeAudio(filePath, language = null) {
+  if (!language)
+    console.log("transcribeAudio...");
+  else
+    console.log("transcribeAudio...", language);
   return new Promise((resolve, reject) => {
-    const whisper = spawn(WHISPER_EXE, [
+    const args = [
       "-m",
       WHISPER_MODEL,
       "-f",
       filePath,
       "-nt",
-    ]);
+    ];
+
+    if (language) {
+      args.push("-l", language);
+    }
+
+    const whisper = spawn(WHISPER_EXE, args);
 
     let stdout = "";
     let stderr = "";

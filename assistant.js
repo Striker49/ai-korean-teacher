@@ -34,14 +34,16 @@ You can either:
 - or request a tool call when an action is needed
 
 IMPORTANT RULES:
-- Never pretend you performed an action if no tool was used.
-- When you want to use a tool, reply ONLY with valid JSON.
-- Do not wrap the JSON in markdown.
-- The JSON format must be exactly:
-{"tool":"tool_name","args":{"key":"value"}}
-- If no tool is needed, answer normally.
-- Prefer using tools when the user asks you to do something on the computer.
-- After receiving a tool result, either use another tool or give the final answer.
+- If a tool is needed, output ONLY a single raw JSON object.
+- Do not use XML, tags, markdown, code fences, or explanations.
+- Do not say <tool_call>, <function>, or <parameter>.
+- The ONLY valid tool format is:
+{"tool":"tool_name","args":{}}
+- Example:
+{"tool":"read_file","args":{"path":"AI/readme.md"}}
+- If no tool is needed, answer normally in plain text.
+- Never claim you opened, read, or wrote a file unless a tool was actually used.
+- After a tool result is provided, either request another tool with JSON or answer normally.
 
 Available tools:
 - open_vscode: Open Visual Studio Code. Args: {}
@@ -66,7 +68,7 @@ async function askAIFromHistory(latestUserMessage = "") {
   const trimmedHistory = conversationHistory.slice(-MAX_TURNS * 2);
 
   const completion = await openai.chat.completions.create({
-    model: "openrouter/hunter-alpha",
+    model: "stepfun/step-3.5-flash:free",
     messages: [
       { role: "system", content: systemPrompt },
       ...trimmedHistory,
@@ -77,8 +79,9 @@ async function askAIFromHistory(latestUserMessage = "") {
 }
 
 function tryParseToolCall(reply) {
+  const cleaned = reply.trim().replace(/^```json\s*|```$/g, "");
+
   try {
-    const cleaned = reply.trim().replace(/^```json\s*|```$/g, "");
     const parsed = JSON.parse(cleaned);
 
     if (
@@ -91,7 +94,22 @@ function tryParseToolCall(reply) {
     }
   } catch (e) {}
 
-  return null;
+  const toolMatch = cleaned.match(/<function=([\w-]+)>/i);
+  if (!toolMatch) return null;
+
+  const tool = toolMatch[1];
+  const args = {};
+
+  const paramRegex = /<parameter=([\w-]+)>\s*([\s\S]*?)\s*<\/parameter>/gi;
+  let match;
+
+  while ((match = paramRegex.exec(cleaned)) !== null) {
+    const key = match[1];
+    const value = match[2].trim();
+    args[key] = value;
+  }
+
+  return { tool, args };
 }
 
 function askToolConfirmation(toolName, args) {

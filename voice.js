@@ -13,7 +13,6 @@ const OUTPUT_FILE = "audio/output.mp3";
 // }
 
 function createTTS(languageOverride) {
-
   return new EdgeTTS({
     voice: !languageOverride ? "en-US-AriaNeural" : "ko-KR-SunHiNeural",
     lang: !languageOverride ? "en-US" : "ko-KR",
@@ -44,8 +43,6 @@ export async function textToAudio(message, languageOverride = null) {
 
   // Remove emojis / unsupported symbols
   message = message.replace(/[^\p{L}\p{N}\p{P}\p{Z}]/gu, "");
-
-  console.log("languageOverride: ", languageOverride);
 
   const tts = createTTS(languageOverride);
   await tts.ttsPromise(message, OUTPUT_FILE);

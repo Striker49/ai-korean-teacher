@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import readlineSync from "readline-sync";
+import readline from "readline";
 import fs from "fs";
 import dotenv from "dotenv";
 import { MEMORY_FILE, MAX_TURNS } from "./config.js";
@@ -7,10 +7,16 @@ import { loadJsonArray, addMemory, getRelevantMemories } from "./memory.js";
 import { recordAudio, transcribeAudio, textToAudio, stopAudio } from "./voice.js";
 
 dotenv.config();
+process.stdin.setEncoding("utf8");
 
 let memory = loadJsonArray(MEMORY_FILE);
 let conversationHistory = [];
 let teacherMode = "general";
+
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
 
 
 const openai = new OpenAI({
@@ -44,6 +50,7 @@ function buildSystemPrompt(latestUserMessage = "") {
     - When the user writes in Korean:
       1. Show corrected version (if needed)
       2. Give a short explanation
+    - NEVER use Hanja (Chinese characters) in Korean sentences.
     - Prefer simple Korean examples with English translation.
     - Ask follow-up questions to keep the conversation going.
     - During quizzes: ask one question only.
@@ -57,6 +64,7 @@ ${
 }
 
 async function askAI(latestUserMessage) {
+
   const systemPrompt = buildSystemPrompt(latestUserMessage);
   //console.log("conversatio history: ", conversationHistory);
   conversationHistory.push({role: "user", content: latestUserMessage})
@@ -88,13 +96,26 @@ function userCommand(trimmed) {
     console.log("🧠 Memory saved.");
     //return;
   }
+  if (trimmed.toLowerCase() == '/practice') {
+    teacherMode = "practice";
+    return ("practice");
+  }
+  if (trimmed.toLowerCase() == '/general') {
+    teacherMode = "general";
+    return ("general")
+  }
 }
 
 async function handleUserInput(userInput) {
   const trimmed = userInput.trim();
   if (!trimmed) return;
 
-  userCommand(trimmed);
+  let res;
+
+  if (res = userCommand(trimmed)) {
+    console.log(`\u001b[34mChanging to ${res} mode.\u001b[0m`);
+    return;
+  }
 
   stopAudio();
 
@@ -104,7 +125,7 @@ async function handleUserInput(userInput) {
 
 
   console.log("\x1b[32mAI:", finalReply, "\x1b[0m\n");
-  await textToAudio(cleanReplyForSpeech(finalReply, teacherMode === "general" ? null : "ko"));
+  await textToAudio(cleanReplyForSpeech(finalReply), teacherMode == "general" ? null : "ko");
 }
 
 async function listenOnce() {
@@ -134,13 +155,23 @@ function createFolders() {
   if (!fs.existsSync("memory")) fs.mkdirSync("memory");
 }
 
+function ask(question) {
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      resolve(answer);
+    });
+  });
+}
+
 async function main() {
   createFolders();
   console.log("🤖 AI Assistant started.");
   console.log("Type normally, or use /v to speak, or 'exit' to quit.");
 
   while (true) {
-    const userInput = readlineSync.question("> ");
+    const userInput = await ask("> ");
+
+    //console.log("You typed:", userInput);
 
     try {
       if (userInput.trim() === "/v") {

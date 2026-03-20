@@ -110,6 +110,7 @@ export function transcribeAudio(filePath, language = null) {
       WHISPER_MODEL,
       "-f",
       filePath,
+      "transcribe",
       "-nt",
     ];
 
@@ -133,8 +134,10 @@ export function transcribeAudio(filePath, language = null) {
     whisper.on("error", reject);
 
     whisper.on("close", (code) => {
+
       if (code === 0) {
-        resolve(stdout.trim());
+        const result = stdout.trim() || stderr.trim();
+        resolve(result);
       } else {
         reject(new Error(stderr || `Whisper failed with code ${code}`));
       }

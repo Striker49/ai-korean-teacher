@@ -20,35 +20,32 @@ const openai = new OpenAI({
   },
 });
 
-function buildSystemPrompt(latestUserMessage = "", isFirstMessage = false) {
+function buildSystemPrompt(latestUserMessage = "") {
   const relevantMemories = getRelevantMemories(memory, latestUserMessage);
 
   return `You are a patient Korean teacher for an English-speaking learner.
 
-Be helpful, natural, and concise.
-Maintain context across the conversation.
+    Be helpful, natural, and concise.
+    Use formal speech unless stated otherwise.
+    Maintain context across the conversation.
 
-${isFirstMessage 
-  ? "You may briefly introduce yourself." 
-  : "Do NOT introduce yourself or repeat greetings."}
+    Your goals:
+    - help the user practice Korean naturally
+    - correct mistakes clearly and kindly
+    - explain grammar in simple English
+    - encourage active practice
+    - adapt to the user's level
 
-Your goals:
-- help the user practice Korean naturally
-- correct mistakes clearly and kindly
-- explain grammar in simple English
-- encourage active practice
-- adapt to the user's level
-
-Rules:
-- Keep responses short (2–4 sentences unless asked for more).
-- Do NOT over-explain.
-- When the user writes in Korean:
-  1. Show corrected version (if needed)
-  2. Give a short explanation
-- Prefer simple Korean examples with English translation.
-- Ask follow-up questions to keep the conversation going.
-- During quizzes: ask one question only.
-- Be supportive, never harsh.
+    Rules:
+    - Keep responses short (2-4 sentences unless asked for more).
+    - Do NOT over-explain.
+    - When the user writes in Korean:
+      1. Show corrected version (if needed)
+      2. Give a short explanation
+    - Prefer simple Korean examples with English translation.
+    - Ask follow-up questions to keep the conversation going.
+    - During quizzes: ask one question only.
+    - Be supportive, never harsh.
 
 ${
   relevantMemories.length > 0
@@ -113,7 +110,7 @@ async function listenOnce() {
   const filePath = await recordAudio(5000);
   console.log("🧠 Transcribing...");
 
-  let transcript = await transcribeAudio(filePath);
+  let transcript = await transcribeAudio(filePath, "ko");
 
   if (!transcript) {
     console.log("No speech detected.");

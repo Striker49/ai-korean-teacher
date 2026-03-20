@@ -10,6 +10,8 @@ dotenv.config();
 
 let memory = loadJsonArray(MEMORY_FILE);
 let conversationHistory = [];
+let teacherMode = "general";
+
 
 const openai = new OpenAI({
   baseURL: "https://openrouter.ai/api/v1",
@@ -102,7 +104,7 @@ async function handleUserInput(userInput) {
 
 
   console.log("\x1b[32mAI:", finalReply, "\x1b[0m\n");
-  await textToAudio(cleanReplyForSpeech(finalReply));
+  await textToAudio(cleanReplyForSpeech(finalReply, teacherMode === "general" ? null : "ko"));
 }
 
 async function listenOnce() {
@@ -110,7 +112,11 @@ async function listenOnce() {
   const filePath = await recordAudio(5000);
   console.log("🧠 Transcribing...");
 
-  let transcript = await transcribeAudio(filePath, "ko");
+  let transcript;
+  if (teacherMode == "general")
+    transcript = await transcribeAudio(filePath);
+  else
+    transcript = await transcribeAudio(filePath, "ko");
 
   if (!transcript) {
     console.log("No speech detected.");
@@ -131,13 +137,13 @@ function createFolders() {
 async function main() {
   createFolders();
   console.log("🤖 AI Assistant started.");
-  console.log("Type normally, or use /voice to speak, or 'exit' to quit.");
+  console.log("Type normally, or use /v to speak, or 'exit' to quit.");
 
   while (true) {
     const userInput = readlineSync.question("> ");
 
     try {
-      if (userInput.trim() === "/voice") {
+      if (userInput.trim() === "/v") {
         await listenOnce();
       } else {
         await handleUserInput(userInput);

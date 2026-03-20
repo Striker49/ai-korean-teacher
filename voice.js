@@ -6,19 +6,17 @@ import edgeTTS from "node-edge-tts";
 const { EdgeTTS } = edgeTTS;
 
 let currentAudioPlayer = null;
-let teacherMode = "general";
 const OUTPUT_FILE = "audio/output.mp3";
 
-function containsKorean(text) {
-  return /[가-힣]/.test(text);
-}
+// function containsKorean(text) {
+//   return /[가-힣]/.test(text);
+// }
 
-function createTTS(text) {
-  const isKorean = containsKorean(text);
+function createTTS(languageOverride) {
 
   return new EdgeTTS({
-    voice: isKorean ? "ko-KR-SunHiNeural" : "en-US-AriaNeural",
-    lang: isKorean ? "ko-KR" : "en-US",
+    voice: !languageOverride ? "en-US-AriaNeural" : "ko-KR-SunHiNeural",
+    lang: !languageOverride ? "en-US" : "ko-KR",
     outputFormat: "audio-24khz-48kbitrate-mono-mp3",
     timeout: 10000,
   });
@@ -35,7 +33,7 @@ export function stopAudio() {
   }
 }
 
-export async function textToAudio(message) {
+export async function textToAudio(message, languageOverride = null) {
   if (!message || !message.trim()) return;
 
   if (!fs.existsSync("audio")) {
@@ -47,7 +45,9 @@ export async function textToAudio(message) {
   // Remove emojis / unsupported symbols
   message = message.replace(/[^\p{L}\p{N}\p{P}\p{Z}]/gu, "");
 
-  const tts = createTTS(message);
+  console.log("languageOverride: ", languageOverride);
+
+  const tts = createTTS(languageOverride);
   await tts.ttsPromise(message, OUTPUT_FILE);
 
   currentAudioPlayer = spawn(

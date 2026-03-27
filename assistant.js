@@ -4,8 +4,8 @@ import fs from "fs";
 import dotenv from "dotenv";
 import { MEMORY_FILE, MAX_TURNS } from "./config.js";
 import { loadJsonArray, addMemory, getRelevantMemories } from "./memory.js";
-import { recordAudio, transcribeAudio, textToAudio, stopAudio, replayAudio } from "./voice.js";
-import { generalPrompt, practicePrompt } from "./prompts.js";
+import { recordAudio, transcribeAudio, textToAudio, stopAudio, replayAudio, stopRecording } from "./voice.js";
+import { generalPrompt, practicePrompt, translationPrompt } from "./prompts.js";
 
 dotenv.config();
 process.stdin.setEncoding("utf8");
@@ -42,7 +42,7 @@ async function askAI(latestUserMessage) {
 
   const systemPrompt = buildSystemPrompt(latestUserMessage, teacherMode);
   //console.log("conversatio history: ", conversationHistory);
-  //console.log("systemp prompt: ", systemPrompt);
+  console.log("systemp prompt: ", teacherMode);
   conversationHistory.push({role: "user", content: latestUserMessage})
 
   const trimmedHistory = conversationHistory.slice(-MAX_TURNS * 2);
@@ -63,7 +63,7 @@ function cleanReplyForSpeech(reply) {
 }
 
 async function translate() {
-  const systemPrompt = `translate that Korean dialogue to English`
+  const systemPrompt = translationPrompt;
   const completion = await openai.chat.completions.create({
     model: "stepfun/step-3.5-flash:free",
     messages: [
@@ -71,6 +71,7 @@ async function translate() {
       conversationHistory[conversationHistory.length - 1]
     ],
   });
+  console.log("Content translated: ", conversationHistory[conversationHistory.length - 1].content);
   //console.log(completion.choices[0].message);
   return(completion.choices[0].message.content);
 }
@@ -97,9 +98,9 @@ async function userCommand(trimmed) {
     const translation = await translate();
     return (translation);
   }
-    if (trimmed.toLowerCase() == '/repeat') {
+  if (trimmed.toLowerCase() == '/repeat') {
     await replayAudio();
-    return;
+    return ("repeat");
   }
 }
 
@@ -112,6 +113,8 @@ async function handleUserInput(userInput) {
   if (res = await userCommand(trimmed)) {
     if (res == "practice" || res == "general")
       console.log(`\u001b[34mChanged to ${res} mode.\u001b[0m`);
+    else if (res == "repeat")
+      console.log(`\u001b[34mRepeating...\u001b[0m`);
     else
       console.log(`\u001b[34mTranslation: ${res}\u001b[0m`);
     return;
@@ -121,7 +124,7 @@ async function handleUserInput(userInput) {
 
   const finalReply = await askAI(trimmed);
 
-  conversationHistory.push({role: "assistant", content: finalReply})
+  conversationHistory.push({role: "assistant", content: finalReply});
 
 
   console.log("\x1b[32mAI:", finalReply, "\x1b[0m\n");
@@ -130,7 +133,11 @@ async function handleUserInput(userInput) {
 
 async function listenOnce() {
   console.log("🎤 Speak now...");
-  const filePath = await recordAudio(5000);
+  //const filePath = await recordAudio(5000);
+  const recordingPromise = recordAudio();
+  await ask("");
+  stopRecording();
+  const filePath = await recordingPromise;
   console.log("🧠 Transcribing...");
 
   let transcript;

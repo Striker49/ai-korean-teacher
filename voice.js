@@ -195,36 +195,40 @@ export async function textToAudio(message) {
   }
 }
 
-export function recordAudio(durationMs = 5000) {
-  return new Promise((resolve, reject) => {
-    if (fs.existsSync(AUDIO_FILE)) {
-      fs.unlinkSync(AUDIO_FILE);
-    }
+let ffmpegRecorder = null;
 
-    const ffmpeg = spawn("ffmpeg", [
+export function recordAudio() {
+  return new Promise((resolve, reject) => {
+    if (fs.existsSync(AUDIO_FILE)) fs.unlinkSync(AUDIO_FILE);
+
+    ffmpegRecorder = spawn("ffmpeg", [
       "-y",
       "-f", "dshow",
       "-i", MIC_NAME,
       "-ac", "1",
       "-ar", "16000",
-      "-t", String(durationMs / 1000),
       "-acodec", "pcm_s16le",
       AUDIO_FILE,
-    ]);
+    ], { stdio: ["pipe", "pipe", "pipe"]});
 
     let stderr = "";
-
-    ffmpeg.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    ffmpeg.on("error", reject);
-
-    ffmpeg.on("close", (code) => {
-      if (code === 0) resolve(AUDIO_FILE);
-      else reject(new Error(`ffmpeg failed with code ${code}\n${stderr}`));
+    ffmpegRecorder.stderr.on("data", d => stderr += d.toString());
+    ffmpegRecorder.on("error", reject);
+    ffmpegRecorder.on("close", code => {
+      ffmpegRecorder = null;
+      // code 1 is normal for ffmpeg when killed via stdin "q"
+      if (code === 0 || code === 1) resolve(AUDIO_FILE);
+      else reject(new Error(`ffmpeg failed: ${stderr}`));
     });
   });
+}
+
+export function stopRecording() {
+  if (ffmpegRecorder) {
+    // Send "q" to ffmpeg stdin — graceful stop, flushes the file properly
+    ffmpegRecorder.stdin.write("q");
+    ffmpegRecorder.stdin.end();
+  }
 }
 
 

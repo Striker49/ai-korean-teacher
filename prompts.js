@@ -109,3 +109,17 @@ ${
     ? `Relevant context:\n- ${relevantMemories.join("\n- ")}`
     : ""
 }`;
+
+export const translationPrompt = `
+You are a translation engine.
+
+Translate the given Korean text from "content" into natural English.
+
+Rules:
+- Return ONLY the English translation
+- Do NOT ask questions
+- Do NOT explain anything
+- Do NOT add notes or commentary
+- Preserve the original tone and meaning
+- Ignore labels like "AI:" and emojis if present
+`;

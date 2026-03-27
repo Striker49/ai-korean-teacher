@@ -2,22 +2,127 @@ import fs from "fs";
 import { AUDIO_FILE, MIC_NAME, WHISPER_EXE, WHISPER_MODEL } from "./config.js";
 import { spawn, execSync } from "child_process";
 import edgeTTS from "node-edge-tts";
+import path from "path";
+import os from "os";
 
 const { EdgeTTS } = edgeTTS;
 
 let currentAudioPlayer = null;
 const OUTPUT_FILE = "audio/output.mp3";
 
-// function containsKorean(text) {
-//   return /[가-힣]/.test(text);
-// }
 
-function createTTS(languageOverride) {
+const EN_VOICE = "en-US-AriaNeural";
+const KO_VOICE = "ko-KR-SunHiNeural";
+
+function createTTS(voice, lang) {
   return new EdgeTTS({
-    voice: !languageOverride ? "en-US-AriaNeural" : "ko-KR-SunHiNeural",
-    lang: !languageOverride ? "en-US" : "ko-KR",
+    voice,
+    lang,
     outputFormat: "audio-24khz-48kbitrate-mono-mp3",
     timeout: 10000,
+  });
+}
+
+function isKoreanChar(char) {
+  return /[가-힣ㄱ-ㅎㅏ-ㅣ]/.test(char);
+}
+
+function isWhitespaceOrPunctuation(char) {
+  return /[\s\p{P}]/u.test(char);
+}
+
+function splitByLanguage(text) {
+  const chunks = [];
+  let current = "";
+  let currentType = null;
+
+  for (const char of text) {
+    const type = isKoreanChar(char) ? "ko" : "en";
+
+    if (currentType === null) {
+      currentType = type;
+      current = char;
+      continue;
+    }
+
+    if (isWhitespaceOrPunctuation(char)) {
+      current += char;
+      continue;
+    }
+
+    if (type === currentType) {
+      current += char;
+    } else {
+      if (current.trim()) {
+        chunks.push({lang: currentType, text: current.trim()});
+      }
+      current = char;
+      currentType = type;
+    }
+  }
+  if (current.trim()) {
+    chunks.push({lang: currentType, text: current.trim()});
+  }
+  return (chunks);
+}
+
+async function concatMp3Files(files, outputFile) {
+  const listFile = path.join(os.tmpdir(), `tts_concat_${Date.now()}.txt`);
+
+  const content = files
+    .map((file) => `file '${path.resolve(file).replace(/'/g, "'\\''")}'`)
+    .join("\n");
+
+  fs.writeFileSync(listFile, content, "utf8");
+
+  try {
+    const ffmpeg = spawn(
+      "ffmpeg",
+      [
+        "-y",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        listFile,
+        "-c",
+        "copy",
+        outputFile,
+      ],
+      { stdio: "ignore" }
+    );
+
+    await waitForProcessClose(ffmpeg);
+  } finally {
+    if (fs.existsSync(listFile)) {
+      fs.unlinkSync(listFile);
+    }
+  }
+}
+
+async function synthesizeChunk(text, lang, outFile) {
+  const voice = lang === "ko" ? KO_VOICE : EN_VOICE;
+  const locale = lang === "ko" ? "ko-KR" : "en-US";
+
+  const tts = createTTS(voice, locale);
+  await tts.ttsPromise(text, outFile);
+}
+
+function playAudio(filePath) {
+  currentAudioPlayer = spawn(
+    "ffplay",
+    ["-nodisp", "-autoexit", "-loglevel", "quiet", filePath],
+    { stdio: "ignore" }
+  );
+
+  currentAudioPlayer.on("close", () => {
+    currentAudioPlayer = null;
+  });
+
+  currentAudioPlayer.on("error", (err) => {
+    console.error("Audio playback error:", err.message);
+    currentAudioPlayer = null;
   });
 }
 
@@ -32,7 +137,24 @@ export function stopAudio() {
   }
 }
 
-export async function textToAudio(message, languageOverride = null) {
+function sanitizeForSpeech(message) {
+  return message
+    .replace(/[^\p{L}\p{N}\p{P}\p{Z}]/gu, "")
+    .replace(/\*/g, "")
+    .trim();
+}
+
+function waitForProcessClose(proc) {
+  return new Promise((resolve, reject) => {
+    proc.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Process exited with code ${code}`));
+    });
+    proc.on("error", reject);
+  });
+}
+
+export async function textToAudio(message) {
   if (!message || !message.trim()) return;
 
   if (!fs.existsSync("audio")) {
@@ -42,25 +164,35 @@ export async function textToAudio(message, languageOverride = null) {
   stopAudio();
 
   // Remove emojis / unsupported symbols
-  message = message.replace(/[^\p{L}\p{N}\p{P}\p{Z}]/gu, "");
+  message = sanitizeForSpeech(message);
+  const chunks = splitByLanguage(message);
 
-  const tts = createTTS(languageOverride);
-  await tts.ttsPromise(message, OUTPUT_FILE);
+  if (chunks.length === 0)
+    return;
 
-  currentAudioPlayer = spawn(
-    "ffplay",
-    ["-nodisp", "-autoexit", "-loglevel", "quiet", OUTPUT_FILE],
-    { stdio: "ignore" }
-  );
+  const tempFiles = [];
 
-  currentAudioPlayer.on("close", () => {
-    currentAudioPlayer = null;
-  });
+  try {
+    for (let i = 0; i < chunks.length; i++) {
+      const tempFile = `audio/chunk_${i}.mp3`;
+      tempFiles.push(tempFile);
+      await synthesizeChunk(chunks[i].text, chunks[i].lang, tempFile);
+    }
 
-  currentAudioPlayer.on("error", (err) => {
-    console.error("Audio playback error:", err.message);
-    currentAudioPlayer = null;
-  });
+    if (tempFiles.length === 1) {
+      fs.copyFileSync(tempFiles[0], OUTPUT_FILE);
+    } else {
+      await concatMp3Files(tempFiles, OUTPUT_FILE);
+    }
+
+    playAudio(OUTPUT_FILE);
+  } finally {
+    for (const file of tempFiles) {
+      if (fs.existsSync(file)) {
+        fs.unlinkSync(file);
+      }
+    }
+  }
 }
 
 export function recordAudio(durationMs = 5000) {
@@ -140,4 +272,10 @@ export function transcribeAudio(filePath, language = null) {
       }
     });
   });
+}
+
+export async function replayAudio() {
+  if (!fs.existsSync(OUTPUT_FILE)) return;
+  stopAudio();
+  playAudio(OUTPUT_FILE);
 }

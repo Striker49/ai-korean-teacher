@@ -4,7 +4,8 @@ import fs from "fs";
 import dotenv from "dotenv";
 import { MEMORY_FILE, MAX_TURNS } from "./config.js";
 import { loadJsonArray, addMemory, getRelevantMemories } from "./memory.js";
-import { recordAudio, transcribeAudio, textToAudio, stopAudio } from "./voice.js";
+import { recordAudio, transcribeAudio, textToAudio, stopAudio, replayAudio } from "./voice.js";
+import { generalPrompt, practicePrompt } from "./prompts.js";
 
 dotenv.config();
 process.stdin.setEncoding("utf8");
@@ -28,45 +29,20 @@ const openai = new OpenAI({
   },
 });
 
-function buildSystemPrompt(latestUserMessage = "") {
+function buildSystemPrompt(latestUserMessage = "", mode) {
   const relevantMemories = getRelevantMemories(memory, latestUserMessage);
 
-  return `You are a patient Korean teacher for an English-speaking learner.
-
-    Be helpful, natural, and concise.
-    Use formal speech unless stated otherwise.
-    Maintain context across the conversation.
-
-    Your goals:
-    - help the user practice Korean naturally
-    - correct mistakes clearly and kindly
-    - explain grammar in simple English
-    - encourage active practice
-    - adapt to the user's level
-
-    Rules:
-    - Keep responses short (2-4 sentences unless asked for more).
-    - Do NOT over-explain.
-    - When the user writes in Korean:
-      1. Show corrected version (if needed)
-      2. Give a short explanation
-    - NEVER use Hanja (Chinese characters) in Korean sentences.
-    - Prefer simple Korean examples with English translation.
-    - Ask follow-up questions to keep the conversation going.
-    - During quizzes: ask one question only.
-    - Be supportive, never harsh.
-
-${
-  relevantMemories.length > 0
-    ? `Relevant context:\n- ${relevantMemories.join("\n- ")}`
-    : ""
-}`;
+  if (mode == "practice")
+    return (practicePrompt(relevantMemories));
+  else
+    return (generalPrompt(relevantMemories));
 }
 
 async function askAI(latestUserMessage) {
 
-  const systemPrompt = buildSystemPrompt(latestUserMessage);
+  const systemPrompt = buildSystemPrompt(latestUserMessage, teacherMode);
   //console.log("conversatio history: ", conversationHistory);
+  //console.log("systemp prompt: ", systemPrompt);
   conversationHistory.push({role: "user", content: latestUserMessage})
 
   const trimmedHistory = conversationHistory.slice(-MAX_TURNS * 2);
@@ -86,7 +62,20 @@ function cleanReplyForSpeech(reply) {
   return reply.replace(/\*/g, "").trim();
 }
 
-function userCommand(trimmed) {
+async function translate() {
+  const systemPrompt = `translate that Korean dialogue to English`
+  const completion = await openai.chat.completions.create({
+    model: "stepfun/step-3.5-flash:free",
+    messages: [
+      { role: "system", content: systemPrompt },
+      conversationHistory[conversationHistory.length - 1]
+    ],
+  });
+  //console.log(completion.choices[0].message);
+  return(completion.choices[0].message.content);
+}
+
+async function userCommand(trimmed) {
   if (trimmed.toLowerCase() == 'exit')
     process.exit(0);
 
@@ -96,13 +85,21 @@ function userCommand(trimmed) {
     console.log("🧠 Memory saved.");
     //return;
   }
-  if (trimmed.toLowerCase() == '/practice') {
+  if (trimmed.toLowerCase() == '/pr') {
     teacherMode = "practice";
     return ("practice");
   }
   if (trimmed.toLowerCase() == '/general') {
     teacherMode = "general";
     return ("general")
+  }
+  if (trimmed.toLowerCase() == '/tr') {
+    const translation = await translate();
+    return (translation);
+  }
+    if (trimmed.toLowerCase() == '/repeat') {
+    await replayAudio();
+    return;
   }
 }
 
@@ -112,8 +109,11 @@ async function handleUserInput(userInput) {
 
   let res;
 
-  if (res = userCommand(trimmed)) {
-    console.log(`\u001b[34mChanging to ${res} mode.\u001b[0m`);
+  if (res = await userCommand(trimmed)) {
+    if (res == "practice" || res == "general")
+      console.log(`\u001b[34mChanged to ${res} mode.\u001b[0m`);
+    else
+      console.log(`\u001b[34mTranslation: ${res}\u001b[0m`);
     return;
   }
 
@@ -125,7 +125,7 @@ async function handleUserInput(userInput) {
 
 
   console.log("\x1b[32mAI:", finalReply, "\x1b[0m\n");
-  await textToAudio(cleanReplyForSpeech(finalReply), teacherMode == "general" ? null : "ko");
+  await textToAudio(cleanReplyForSpeech(finalReply));
 }
 
 async function listenOnce() {

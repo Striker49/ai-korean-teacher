@@ -216,8 +216,9 @@ export function recordAudio() {
     ffmpegRecorder.on("error", reject);
     ffmpegRecorder.on("close", code => {
       ffmpegRecorder = null;
+      const gracefulCodes = [0, 1, 3199971767]
       // code 1 is normal for ffmpeg when killed via stdin "q"
-      if (code === 0 || code === 1) resolve(AUDIO_FILE);
+      if (gracefulCodes.includes(code)) resolve(AUDIO_FILE);
       else reject(new Error(`ffmpeg failed: ${stderr}`));
     });
   });
@@ -228,7 +229,9 @@ export function stopRecording() {
     // Send "q" to ffmpeg stdin — graceful stop, flushes the file properly
     ffmpegRecorder.stdin.write("q");
     ffmpegRecorder.stdin.end();
+    return new Promise(resolve => setTimeout(resolve, 300));
   }
+  return Promise.resolve();
 }
 
 

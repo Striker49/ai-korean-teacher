@@ -62,16 +62,17 @@ function cleanReplyForSpeech(reply) {
   return reply.replace(/\*/g, "").trim();
 }
 
-async function translate() {
+async function translate(sentence) {
   const systemPrompt = translationPrompt;
+  const original = sentence ? {role: "user", content: sentence} : conversationHistory[conversationHistory.length - 1];
   const completion = await openai.chat.completions.create({
     model: "stepfun/step-3.5-flash:free",
     messages: [
       { role: "system", content: systemPrompt },
-      conversationHistory[conversationHistory.length - 1]
+      original
     ],
   });
-  console.log("Content translated: ", conversationHistory[conversationHistory.length - 1].content);
+  //console.log("Content translated: ", conversationHistory[conversationHistory.length - 1].content);
   //console.log(completion.choices[0].message);
   return(completion.choices[0].message.content);
 }
@@ -94,8 +95,10 @@ async function userCommand(trimmed) {
     teacherMode = "general";
     return ("general")
   }
-  if (trimmed.toLowerCase() == '/tr') {
-    const translation = await translate();
+  if (/^\/tr/i.test(trimmed)) {
+    const sentence = trimmed.replace(/^\/tr/i, "").trim();
+    console.log("to translate: ", sentence);
+    const translation = await translate(sentence ? sentence : null);
     return (translation);
   }
   if (trimmed.toLowerCase() == '/repeat') {
@@ -136,7 +139,7 @@ async function listenOnce() {
   //const filePath = await recordAudio(5000);
   const recordingPromise = recordAudio();
   await ask("");
-  stopRecording();
+  await stopRecording();
   const filePath = await recordingPromise;
   console.log("🧠 Transcribing...");
 
@@ -187,7 +190,7 @@ async function main() {
         await handleUserInput(userInput);
       }
     } catch (err) {
-      console.error("Error:", err.message);
+      console.error("Error:", err);
     }
   }
 }

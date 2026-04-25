@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import readline from "readline";
-import fs from "fs";
+import fs, { existsSync } from "fs";
 import dotenv from "dotenv";
 import { MEMORY_FILE, MAX_TURNS } from "./config.js";
 import { loadJsonArray, addMemory, getRelevantMemories } from "./memory.js";
@@ -13,6 +13,7 @@ process.stdin.setEncoding("utf8");
 let memory = loadJsonArray(MEMORY_FILE);
 let conversationHistory = [];
 let teacherMode = "general";
+let conversationFilename;
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -39,6 +40,8 @@ function buildSystemPrompt(latestUserMessage = "", mode) {
 }
 
 async function askAI(latestUserMessage) {
+  console.log("filename: ", conversationFilename);
+  fs.appendFileSync(conversationFilename, `user: ${latestUserMessage}\n`);
 
   const systemPrompt = buildSystemPrompt(latestUserMessage, teacherMode);
   //console.log("conversatio history: ", conversationHistory);
@@ -48,14 +51,20 @@ async function askAI(latestUserMessage) {
   const trimmedHistory = conversationHistory.slice(-MAX_TURNS * 2);
 
   const completion = await openai.chat.completions.create({
-    model: "stepfun/step-3.5-flash:free",
+    model: "openai/gpt-4o-mini",
     messages: [
       { role: "system", content: systemPrompt },
       ...trimmedHistory,
     ],
   });
 
-  return completion.choices?.[0]?.message?.content ?? "I couldn't generate a reply.";
+  const response = completion.choices?.[0]?.message?.content;
+
+  if (response)
+    fs.appendFileSync(conversationFilename, `Catherine: ${response}\n\n`);
+
+
+  return response ?? "I couldn't generate a reply.";
 }
 
 function cleanReplyForSpeech(reply) {
@@ -66,7 +75,7 @@ async function translate(sentence) {
   const systemPrompt = translationPrompt;
   const original = sentence ? {role: "user", content: sentence} : conversationHistory[conversationHistory.length - 1];
   const completion = await openai.chat.completions.create({
-    model: "stepfun/step-3.5-flash:free",
+    model: "openai/gpt-4o-mini",
     messages: [
       { role: "system", content: systemPrompt },
       original
@@ -97,7 +106,6 @@ async function userCommand(trimmed) {
   }
   if (/^\/tr/i.test(trimmed)) {
     const sentence = trimmed.replace(/^\/tr/i, "").trim();
-    console.log("to translate: ", sentence);
     const translation = await translate(sentence ? sentence : null);
     return (translation);
   }
@@ -177,6 +185,29 @@ async function main() {
   createFolders();
   console.log("🤖 AI Assistant started.");
   console.log("Type normally, or use /v to speak, or 'exit' to quit.");
+  const now = new Date();
+  const baseName = 'logs/' + now.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  }).replace(",", "");
+
+  let counter = 0;
+  let fileName;
+
+  while (true) {
+    fileName =
+      counter === 0
+        ? `${baseName}.txt`
+        : `${baseName} (${counter}).txt`;
+
+    if (!fs.existsSync(fileName)) break;
+
+    counter++;
+  }
+  conversationFilename = fileName;
+
+  fs.writeFileSync(fileName, "", "utf-8");
 
   while (true) {
     const userInput = await ask("> ");
